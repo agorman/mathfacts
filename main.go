@@ -16,14 +16,23 @@ import (
 )
 
 func main() {
-	var number = flag.Int("number", 0, "math fact to test (number you're multiplying")
 	var max = flag.Int("max", 0, "highest multple, usually 10, 11, or 12")
 	var duration = flag.Int("duration", 5, "duration of the test in minutes")
 	var csvFile = flag.String("csv", "./results.csv", "location to store test results")
 	flag.Parse()
 
-	if *number <= 0 {
-		panic("number must be greater than 0")
+	tail := flag.Args()
+	numbers := make([]int, 0, len(tail))
+	for _, val := range tail {
+		i, err := strconv.Atoi(val)
+		if err != nil {
+			panic(fmt.Sprintf("%s is not a valid number", val))
+		}
+		numbers = append(numbers, i)
+	}
+
+	if len(numbers) == 0 {
+		numbers = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 	}
 
 	if *max <= 0 {
@@ -44,7 +53,7 @@ func main() {
 	t := time.NewTicker(time.Minute * time.Duration(*duration))
 
 	// start the test
-	go test(*number, *max, answerc)
+	go test(numbers, *max, answerc)
 
 	var results []bool
 
@@ -54,10 +63,10 @@ func main() {
 	for {
 		select {
 		case <-t.C:
-			processResults(*csvFile, *number, start, results)
+			processResults(*csvFile, numbers, start, results)
 			return
 		case <-sig:
-			processResults(*csvFile, *number, start, results)
+			processResults(*csvFile, numbers, start, results)
 			return
 		case b := <-answerc:
 			results = append(results, b)
@@ -65,7 +74,7 @@ func main() {
 	}
 }
 
-func test(number, max int, answerc chan<- bool) {
+func test(numbers []int, max int, answerc chan<- bool) {
 	// reader will read the users answers from stdin
 	reader := bufio.NewReader(os.Stdin)
 
@@ -76,15 +85,18 @@ func test(number, max int, answerc chan<- bool) {
 
 	for {
 		// the next number to multiple
-		next := rand.Intn(max + 1)
+		idx := rand.Intn(len(numbers))
+		left := numbers[idx]
+		right := rand.Intn(max + 1)
+		correctAnswer := right * left
 
 		// determine which side of the operator the math fact appears
 		// and ask the next question
 		flip := rand.Intn(100)
 		if flip < 50 {
-			fmt.Printf("%d x %d: ", number, next)
+			fmt.Printf("%d x %d: ", left, right)
 		} else {
-			fmt.Printf("%d x %d: ", next, number)
+			fmt.Printf("%d x %d: ", right, left)
 		}
 
 		// read the answer from stdin
@@ -112,17 +124,17 @@ func test(number, max int, answerc chan<- bool) {
 		cmd.Run()
 
 		// print the result and return it on the answer chan
-		if answer == number*next {
+		if answer == correctAnswer {
 			fmt.Println("CORRECT\n")
 			answerc <- true
 		} else {
-			fmt.Printf("INCORRECT: %d\n\n", number*next)
+			fmt.Printf("INCORRECT: %d\n\n", correctAnswer)
 			answerc <- false
 		}
 	}
 }
 
-func processResults(csvFile string, number int, start time.Time, results []bool) {
+func processResults(csvFile string, numbers []int, start time.Time, results []bool) {
 	fmt.Println("\n\nRESULTS")
 
 	var correct int
@@ -140,10 +152,10 @@ func processResults(csvFile string, number int, start time.Time, results []bool)
 	fmt.Printf("%d / %d = %d%% in %s: \n", correct, total, percentCorrect, duration)
 	fmt.Printf("%f problems per minute\n", correctPerMinute)
 
-	saveResults(csvFile, number, correct, total, percentCorrect, duration, correctPerMinute, date)
+	saveResults(csvFile, numbers, correct, total, percentCorrect, duration, correctPerMinute, date)
 }
 
-func saveResults(csvFile string, number, correct, total, percentCorrect int, duration string, correctPerMinute float64, date string) {
+func saveResults(csvFile string, numbers []int, correct, total, percentCorrect int, duration string, correctPerMinute float64, date string) {
 	f, err := os.OpenFile(csvFile, os.O_CREATE|os.O_APPEND|os.O_RDONLY, os.ModeAppend)
 	if err != nil {
 		panic(err)
@@ -171,9 +183,14 @@ func saveResults(csvFile string, number, correct, total, percentCorrect int, dur
 		records = append(records, []string{"date", "fact", "correct", "total", "time", "correct per minute"})
 	}
 
+	var nums []string
+	for _, i := range numbers {
+		nums = append(nums, strconv.Itoa(i))
+	}
+
 	records = append(records, []string{
 		date,
-		fmt.Sprintf("%d", number),
+		strings.Join(nums, " "),
 		fmt.Sprintf("%d", correct),
 		fmt.Sprintf("%d", total),
 		duration,
